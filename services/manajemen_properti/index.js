@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const db = require('../../db');
+const axios = require('axios');
 
 // GET semua properti
 router.get('/', async (req, res) => {
@@ -13,20 +14,45 @@ router.get('/', async (req, res) => {
   }
 });
 
-// GET properti by id
 router.get('/:id', async (req, res) => {
-  const { id } = req.params;
+  const id = req.params.id;
+
   try {
-    const [rows] = await db.query('SELECT * FROM Properti WHERE id_properti = ?', [id]);
-    if (rows.length === 0) {
-      return res.status(404).json({ message: 'Properti tidak ditemukan' });
+    // Ambil data properti
+    const [propertiRows] = await db.query('SELECT * FROM Properti WHERE id_properti = ?', [id]);
+    const properti = propertiRows[0];
+    if (!properti) return res.status(404).json({ message: 'Properti tidak ditemukan' });
+
+    // Ambil data fasilitas dari service manajemen_fasilitas
+    const fasilitasResponse = await axios.get(`http://localhost:5000/manajemen_fasilitas/properti/${id}`);
+    const fasilitas = fasilitasResponse.data;
+
+    // Ambil data ulasan dari service review (jika service down, fallback [])
+    let ulasan = [];
+    try {
+      const reviewResponse = await axios.get(`http://localhost:3000/review/${id}`);
+      ulasan = reviewResponse.data;
+    } catch (err) {
+      console.warn(`Service review tidak tersedia: ${err.message}`);
+      ulasan = []; // fallback
     }
-    res.json(rows[0]);
-  } catch (err) {
-    console.error('Error mengambil properti:', err.message);
-    res.status(500).json({ message: 'Gagal mengambil properti' });
+
+    // Gabungkan hasil
+    res.json({
+      ...properti,
+      fasilitas,
+      ulasan
+    });
+
+  } catch (error) {
+    console.error('Error mengambil data properti:', error.message);
+    res.status(500).json({ message: 'Terjadi kesalahan saat mengambil data properti' });
   }
 });
+
+module.exports = router;
+
+
 
 // POST tambah properti baru
 router.post('/', async (req, res) => {
